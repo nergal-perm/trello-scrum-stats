@@ -1,0 +1,5 @@
+{
+    "trelloAPI": "some value",
+    "trelloToken": "another value",
+    "someID": "yet another value"
+}
