@@ -12,38 +12,83 @@
 </head>
 <body>
 
-    <div id="testDiv"></div>
+    <div id="testDiv">
+        <h1>Test Trello queries</h1>
+
+        <form>
+            <div><select id="sprintSelect"></select></div>
+            <div><button type="button" onclick="loadSprintCardsFor()">Получить данные</button></div>
+        </form>
+
+    </div>
 
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
     <script>
+        var apiData = {};
         $(document).ready(function() {
-            $("#testDiv").html("<h1>Hello, world</h1>");
+            loadConfig();
+        });
+
+        function loadConfig() {
             $.getJSON( "assets/config.json", function( data ) {
-                var apiData = {};
                 $.each( data, function( key, val ) {
                     apiData[key] = val;
                 });
-                getAllTheSprints(apiData);
+                getAllTheSprints();
             });
-        });
+        }
 
-        function getAllTheSprints(apiData) {
+        function getAllTheSprints() {
             var url = "https://api.trello.com/1/lists/" + apiData.sprintsListID +
             "/cards?key=" + apiData.apiKey + "&token=" + apiData.apiToken + "&fields=name,id&customFieldItems=true";
             $.getJSON(url, function (data) {
                 var sprints = [];
-                var items = [];
                 $.each(data, function(item) {
                     var sprint = data[item];
                     sprints.push(sprint);
-                    items.push( "<li>" + sprint.name + ": " + sprint.customFieldItems[1].value.date + "</li>" );
                 });
-                
-                $( "<ul/>", {
-                    "class": "my-new-list",
-                    html: items.join( "" )
-                }).appendTo( "#testDiv" );
+                fillSprintsDropdown(sprints);
             });
+        }
+
+        function fillSprintsDropdown(sprints) {
+            var items=[];
+            $.each(sprints, function(sprintNum) {
+                var sprint = sprints[sprintNum];
+                var sprintId = getSprintIdFor(sprint);
+                if (sprintId !== null) {
+                    items.push( "<option value='" + sprintId + "'>" + sprint.name + "</option>" );
+                }
+            });
+            $( "#sprintSelect").html(items.join(""));
+        }
+
+        function getSprintIdFor(sprint) {
+            var result = null;
+            $.each(sprint.customFieldItems, function(index) {
+                var customField = sprint.customFieldItems[index];
+                if (typeof(customField.value.text) === "string") {
+                    result = customField.value.text;
+                }
+            }); 
+            return result;
+        }
+
+        function loadSprintCardsFor() {
+            var sprintId = $("#sprintSelect").val();
+            var url = "https://api.trello.com/1/boards/" + sprintId +
+            "/cards?key=" + apiData.apiKey + "&token=" + apiData.apiToken + "&fields=name,id,idList&customFieldItems=true";
+            $.getJSON(url, function (data) {
+                var cards = [];
+                $.each(data, function(index) {
+                    var card = data[index];
+                    cards.push("<li>" + card.name + "</li>");
+                });
+                $( "<ul/>", {
+                    "class": "cards-list",
+                    html: cards.join( "" )
+                }).appendTo( "#testDiv" );
+            });            
         }
     </script>
 </body>

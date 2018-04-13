@@ -1,5 +1,5 @@
 {
-    "trelloAPI": "some value",
-    "trelloToken": "another value",
-    "someID": "yet another value"
+    "apiKey": "some value",
+    "apiToken": "another value",
+    "sprintsListID": "yet another value"
 }
