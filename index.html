@@ -24,6 +24,7 @@
 
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
     <script>
+        // TODO: I need to know date span of the sprint being analyzed
         var apiData = {};
         $(document).ready(function() {
             loadConfig();
@@ -77,18 +78,103 @@
         function loadSprintCardsFor() {
             var sprintId = $("#sprintSelect").val();
             var url = "https://api.trello.com/1/boards/" + sprintId +
-            "/cards?key=" + apiData.apiKey + "&token=" + apiData.apiToken + "&fields=name,id,idList&customFieldItems=true";
+            "/cards?key=" + apiData.apiKey + "&token=" + apiData.apiToken + "&fields=name,dueComplete,due,labels&customFieldItems=true";
             $.getJSON(url, function (data) {
                 var cards = [];
+                var sprintPlannedPoints = 0;
+                var sprintEstimatedPoints = 0;
+                var sprintRealPoints = 0;
+                var burnout = createBurnoutTemplate("04/08/2018");
                 $.each(data, function(index) {
-                    var card = data[index];
+                    var card = createCardFrom(data[index]);
+                    if (card.isTask) {
+                        if (card.isPlanned) {
+                            sprintPlannedPoints += card.pointsEstimated;
+                        }
+                        sprintEstimatedPoints += card.pointsEstimated;
+                        sprintRealPoints += card.pointsReal > 0 ? card.pointsReal : 0;
+                        burnout[card.dateCreated.toLocaleDateString()].realPointsLeft += card.pointsEstimated;
+                        if (card.isCompleted) {
+                            burnout[card.dateCompleted.toLocaleDateString()].realPointsDone += card.pointsReal;
+                        }
+                    }
                     cards.push("<li>" + card.name + "</li>");
                 });
+                $("<p/>", {
+                    html: "Очков на спринт (план): <strong>" + sprintPlannedPoints + "</strong><br/>" +
+                          "Всего очков на спринт: <strong>" + sprintEstimatedPoints + "</strong><br/>" +
+                          "Реализовано очков: <strong>" + sprintRealPoints + "</strong>"
+                    }).appendTo( "#testDiv");
                 $( "<ul/>", {
                     "class": "cards-list",
                     html: cards.join( "" )
                 }).appendTo( "#testDiv" );
+                console.log(burnout);
             });            
+        }
+
+        function createCardFrom(cardData) {
+            if (typeof(cardData) === "object") {
+                var card = {};
+
+                var estPointsRegex = /\(([\d|\.]*)\)/g;
+                if (cardData.name.search(estPointsRegex) > -1) {
+                    card.isTask = true;
+                    var result = estPointsRegex.exec(cardData.name);
+                    card.pointsEstimated = Number.parseFloat(result[1]);
+                    cardData.name = cardData.name.replace(estPointsRegex, "").trim();
+                }
+
+                var realPointsRegex = /\[([\d|\.]*)\]/g;
+                if (cardData.name.search(realPointsRegex) > -1) {
+                    var result = realPointsRegex.exec(cardData.name);
+                    card.pointsReal = Number.parseFloat(result[1]);;
+                    cardData.name = cardData.name.replace(realPointsRegex, "").trim();
+                }
+
+                card.name = cardData.name;
+                card.isCompleted = !!cardData.dueComplete;
+                if (card.isCompleted === true) {
+                    card.dateCompleted = new Date(Date.parse(cardData.due));
+                }
+                card.isPlanned = true;
+                cardData.customFieldItems.forEach(function(item) {
+                    // some hard-code here
+                    switch(item.idCustomField) {
+                        case "5acc4454e17810c92cec228c":
+                            card.isPlanned = false;
+                            card.dateCreated = new Date(Date.parse(item.value.date));
+                            break;
+                        case "5accace42b9759e971de4e10":
+                            card.estimatedHours = Number.parseFloat(item.value.number);
+                            break;
+                        case "5accaceb2d1956c939fb9100":
+                            card.realHours = Number.parseFloat(item.value.number);
+                            break;
+                    }
+                });
+                if(card.isPlanned) {
+                    card.dateCreated = new Date(Date.parse("04/08/2018"));
+                }
+ 
+                return card;
+            } else {
+                return null;
+            }
+        }
+
+        function createBurnoutTemplate(dateBegin) {
+            var date = new Date(Date.parse(dateBegin));
+            var result = {};
+            for(var i=0; i<7; i++) {
+                result[date.toLocaleDateString()] = {
+                    "idealPointsLeft": 0,
+                    "realPointsLeft": 0,
+                    "realPointsDone": 0
+                };
+                date.setDate(date.getDate() + 1);
+            }
+            return result;            
         }
     </script>
 </body>
