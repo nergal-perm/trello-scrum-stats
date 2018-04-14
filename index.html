@@ -25,6 +25,8 @@
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
     <script>
         // TODO: I need to know date span of the sprint being analyzed
+        const SPRINT_BEGIN_DATE = treatAsUTC("04/08/2018");
+
         var apiData = {};
         $(document).ready(function() {
             loadConfig();
@@ -84,7 +86,7 @@
                 var sprintPlannedPoints = 0;
                 var sprintEstimatedPoints = 0;
                 var sprintRealPoints = 0;
-                var burnout = createBurnoutTemplate("04/08/2018");
+                var burnout = createBurnoutTemplate();
                 $.each(data, function(index) {
                     var card = createCardFrom(data[index]);
                     if (card.isTask) {
@@ -93,13 +95,14 @@
                         }
                         sprintEstimatedPoints += card.pointsEstimated;
                         sprintRealPoints += card.pointsReal > 0 ? card.pointsReal : 0;
-                        burnout[card.dateCreated.toLocaleDateString()].realPointsLeft += card.pointsEstimated;
+                        burnout[card.dayCreated].realPointsLeft += card.pointsEstimated;
                         if (card.isCompleted) {
-                            burnout[card.dateCompleted.toLocaleDateString()].realPointsDone += card.pointsReal;
+                            burnout[card.dayCompleted].realPointsDone += card.pointsReal;
                         }
                     }
                     cards.push("<li>" + card.name + "</li>");
                 });
+                calculateBurnoutStats(burnout, sprintPlannedPoints);
                 $("<p/>", {
                     html: "Очков на спринт (план): <strong>" + sprintPlannedPoints + "</strong><br/>" +
                           "Всего очков на спринт: <strong>" + sprintEstimatedPoints + "</strong><br/>" +
@@ -109,7 +112,7 @@
                     "class": "cards-list",
                     html: cards.join( "" )
                 }).appendTo( "#testDiv" );
-                console.log(burnout);
+                
             });            
         }
 
@@ -135,7 +138,7 @@
                 card.name = cardData.name;
                 card.isCompleted = !!cardData.dueComplete;
                 if (card.isCompleted === true) {
-                    card.dateCompleted = new Date(Date.parse(cardData.due));
+                    card.dayCompleted = getDaysBetween(treatAsUTC(cardData.due), SPRINT_BEGIN_DATE);
                 }
                 card.isPlanned = true;
                 cardData.customFieldItems.forEach(function(item) {
@@ -143,7 +146,7 @@
                     switch(item.idCustomField) {
                         case "5acc4454e17810c92cec228c":
                             card.isPlanned = false;
-                            card.dateCreated = new Date(Date.parse(item.value.date));
+                            card.dayCreated = getDaysBetween(treatAsUTC(item.value.date), SPRINT_BEGIN_DATE);
                             break;
                         case "5accace42b9759e971de4e10":
                             card.estimatedHours = Number.parseFloat(item.value.number);
@@ -154,7 +157,7 @@
                     }
                 });
                 if(card.isPlanned) {
-                    card.dateCreated = new Date(Date.parse("04/08/2018"));
+                    card.dayCreated = 0;
                 }
  
                 return card;
@@ -163,18 +166,41 @@
             }
         }
 
-        function createBurnoutTemplate(dateBegin) {
-            var date = new Date(Date.parse(dateBegin));
-            var result = {};
-            for(var i=0; i<7; i++) {
-                result[date.toLocaleDateString()] = {
+        function createBurnoutTemplate() {
+            var result = new Array(7);
+            for (var i=0; i<7; i++) {
+                result[i] = {
                     "idealPointsLeft": 0,
                     "realPointsLeft": 0,
                     "realPointsDone": 0
                 };
-                date.setDate(date.getDate() + 1);
             }
-            return result;            
+            return result;
+        }
+
+        function getDaysBetween(date1, date2) {
+            var millisecondsPerDay = 24 * 60 * 60 * 1000;
+            return Math.floor((date1 - date2) / millisecondsPerDay);            
+        }
+
+        function calculateBurnoutStats(burnout, sprintPlannedPoints) {
+            var idealBurnoutPerDay = sprintPlannedPoints / burnout.length;
+            burnout.forEach(function(day, index, array) {
+                day.idealPointsLeft = Math.round(sprintPlannedPoints - idealBurnoutPerDay * (index + 1));
+                if (index === 0) {
+                    day.realPointsLeft = day.realPointsLeft - day.realPointsDone;
+                } else {
+                    day.realPointsLeft = array[index-1].realPointsLeft + day.realPointsLeft - day.realPointsDone;
+                    day.realPointsDone += array[index-1].realPointsDone;
+                }
+            });
+            return burnout;
+        }
+
+        function treatAsUTC(date) {
+            var result = new Date(Date.parse(date));
+            result.setMinutes(result.getMinutes() - result.getTimezoneOffset());
+            return result;
         }
     </script>
 </body>
