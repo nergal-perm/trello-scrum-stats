@@ -25,9 +25,15 @@
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
     <script>
         // TODO: I need to know date span of the sprint being analyzed
-        const SPRINT_BEGIN_DATE = treatAsUTC("04/08/2018");
+        var SPRINT_BEGIN_DATE = treatAsUTC("04/08/2018");
+        const CUSTOM_FIELD_SPRINT_ID = "5aceccf6b9f19cf7c6ecac99";
+        const CUSTOM_FIELD_SPRINT_NUMBER = "5acdb5b1bc91f1d6ebe4bc8b";
+        const CUSTOM_FIELD_SPRINT_START_DATE = "5acdb5bb4b208d21a7fc36c5";
+        const CUSTOM_FIELD_SPRINT_END_DATE = "5acdb5c2c97abe259d435942";
 
         var apiData = {};
+        var sprints = [];
+
         $(document).ready(function() {
             loadConfig();
         });
@@ -45,40 +51,44 @@
             var url = "https://api.trello.com/1/lists/" + apiData.sprintsListID +
             "/cards?key=" + apiData.apiKey + "&token=" + apiData.apiToken + "&fields=name,id&customFieldItems=true";
             $.getJSON(url, function (data) {
-                var sprints = [];
+                var items = [];
                 $.each(data, function(item) {
-                    var sprint = data[item];
+                    var sprint = {};
+                    data[item].customFieldItems.forEach(function(customField) {
+                        switch(customField.idCustomField) {
+                            case CUSTOM_FIELD_SPRINT_ID: 
+                                sprint.id = customField.value.text;
+                                break;
+                            case CUSTOM_FIELD_SPRINT_NUMBER:
+                                sprint.number = customField.value.number;
+                                break;
+                            case CUSTOM_FIELD_SPRINT_START_DATE:
+                                sprint.startDate = treatAsUTC(customField.value.date);
+                                break;
+                            case CUSTOM_FIELD_SPRINT_END_DATE:
+                                sprint.endDate = treatAsUTC(customField.value.date);
+                                break;                             
+                        }
+                    });
+                    sprint.name = data[item].name;
+                    if (sprint.id !== undefined) {
+                        items.push( "<option value='" + sprint.id + "'>" + sprint.name + "</option>" );
+                    }
+
                     sprints.push(sprint);
                 });
-                fillSprintsDropdown(sprints);
+                $( "#sprintSelect").html(items.join(""));
             });
-        }
-
-        function fillSprintsDropdown(sprints) {
-            var items=[];
-            $.each(sprints, function(sprintNum) {
-                var sprint = sprints[sprintNum];
-                var sprintId = getSprintIdFor(sprint);
-                if (sprintId !== null) {
-                    items.push( "<option value='" + sprintId + "'>" + sprint.name + "</option>" );
-                }
-            });
-            $( "#sprintSelect").html(items.join(""));
-        }
-
-        function getSprintIdFor(sprint) {
-            var result = null;
-            $.each(sprint.customFieldItems, function(index) {
-                var customField = sprint.customFieldItems[index];
-                if (typeof(customField.value.text) === "string") {
-                    result = customField.value.text;
-                }
-            }); 
-            return result;
         }
 
         function loadSprintCardsFor() {
             var sprintId = $("#sprintSelect").val();
+            var sprint = getSprintById(sprintId);
+            if (sprint === null) {  
+                alert("Sprint not found");
+                return;
+            }
+            SPRINT_BEGIN_DATE = sprint.startDate;
             var url = "https://api.trello.com/1/boards/" + sprintId +
             "/cards?key=" + apiData.apiKey + "&token=" + apiData.apiToken + "&fields=name,dueComplete,due,labels&customFieldItems=true";
             $.getJSON(url, function (data) {
@@ -89,6 +99,7 @@
                 var burnout = createBurnoutTemplate();
                 $.each(data, function(index) {
                     var card = createCardFrom(data[index]);
+                    console.log(card);
                     if (card.isTask) {
                         if (card.isPlanned) {
                             sprintPlannedPoints += card.pointsEstimated;
@@ -104,9 +115,9 @@
                 });
                 calculateBurnoutStats(burnout, sprintPlannedPoints);
                 $("<p/>", {
-                    html: "Очков на спринт (план): <strong>" + sprintPlannedPoints + "</strong><br/>" +
-                          "Всего очков на спринт: <strong>" + sprintEstimatedPoints + "</strong><br/>" +
-                          "Реализовано очков: <strong>" + sprintRealPoints + "</strong>"
+                    html: "Очков на спринт (план): <strong>" + sprintPlannedPoints.toFixed(2) + "</strong><br/>" +
+                          "Всего очков на спринт: <strong>" + sprintEstimatedPoints.toFixed(2) + "</strong><br/>" +
+                          "Реализовано очков: <strong>" + sprintRealPoints.toFixed(2) + "</strong>"
                     }).appendTo( "#testDiv");
                 $( "<ul/>", {
                     "class": "cards-list",
@@ -175,6 +186,7 @@
                     "realPointsDone": 0
                 };
             }
+            console.log(result);
             return result;
         }
 
@@ -200,6 +212,16 @@
         function treatAsUTC(date) {
             var result = new Date(Date.parse(date));
             result.setMinutes(result.getMinutes() - result.getTimezoneOffset());
+            return result;
+        }
+
+        function getSprintById(sprintId) {
+            var result = null;
+            sprints.forEach(function(sprint) {
+                if (sprint.id === sprintId) {
+                    result = sprint;
+                }
+            });
             return result;
         }
     </script>
