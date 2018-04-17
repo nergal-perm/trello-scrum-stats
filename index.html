@@ -89,6 +89,7 @@
                 return;
             }
             SPRINT_BEGIN_DATE = sprint.startDate;
+            sprintCustomFields = getCustomFieldsFor(sprint.id);
             var url = "https://api.trello.com/1/boards/" + sprintId +
             "/cards?key=" + apiData.apiKey + "&token=" + apiData.apiToken + "&fields=name,dueComplete,due,labels&customFieldItems=true";
             $.getJSON(url, function (data) {
@@ -98,22 +99,23 @@
                 var sprintRealPoints = 0;
                 var burnout = createBurnoutTemplate();
                 $.each(data, function(index) {
-                    var card = createCardFrom(data[index]);
-                    console.log(card);
+                    var card = createCardFrom(data[index], sprintCustomFields);
                     if (card.isTask) {
                         if (card.isPlanned) {
                             sprintPlannedPoints += card.pointsEstimated;
                         }
                         sprintEstimatedPoints += card.pointsEstimated;
-                        sprintRealPoints += card.pointsReal > 0 ? card.pointsReal : 0;
                         burnout[card.dayCreated].realPointsLeft += card.pointsEstimated;
                         if (card.isCompleted) {
-                            burnout[card.dayCompleted].realPointsDone += card.pointsReal;
+                            burnout[card.dayCompleted].realHoursDone += card.hoursReal;
+                            burnout[card.dayCompleted].realPointsDone += card.pointsEstimated;
+                            sprintRealPoints += card.pointsEstimated;
                         }
                     }
                     cards.push("<li>" + card.name + "</li>");
                 });
                 calculateBurnoutStats(burnout, sprintPlannedPoints);
+                console.log(burnout);
                 $("<p/>", {
                     html: "Очков на спринт (план): <strong>" + sprintPlannedPoints.toFixed(2) + "</strong><br/>" +
                           "Всего очков на спринт: <strong>" + sprintEstimatedPoints.toFixed(2) + "</strong><br/>" +
@@ -127,23 +129,45 @@
             });            
         }
 
-        function createCardFrom(cardData) {
+        function getCustomFieldsFor(sprintId) {
+            var url = "https://api.trello.com/1/boards/" + sprintId +
+            "/customFields?key=" + apiData.apiKey + "&token=" + apiData.apiToken;
+            var result = {};
+            $.getJSON(url, function (data) {
+                $.each(data, function(index) {
+                    switch(data[index].name) {
+                        case "Created": 
+                            result.created = data[index].id;
+                            break;
+                        case "Story Points":
+                            result.storyPoints = data[index].id;
+                            break;
+                        case "Scrum Type":
+                            result.scrumType = data[index].id;
+                            break;
+                    }
+                });
+            });
+            return result;
+        }
+
+        function createCardFrom(cardData, sprintCustomFields) {
             if (typeof(cardData) === "object") {
                 var card = {};
 
-                var estPointsRegex = /\(([\d|\.]*)\)/g;
-                if (cardData.name.search(estPointsRegex) > -1) {
+                var estHoursRegex = /\(([\d|\.]*)\)/g;
+                if (cardData.name.search(estHoursRegex) > -1) {
                     card.isTask = true;
-                    var result = estPointsRegex.exec(cardData.name);
-                    card.pointsEstimated = Number.parseFloat(result[1]);
-                    cardData.name = cardData.name.replace(estPointsRegex, "").trim();
+                    var result = estHoursRegex.exec(cardData.name);
+                    card.hoursEstimated = Number.parseFloat(result[1]);
+                    cardData.name = cardData.name.replace(estHoursRegex, "").trim();
                 }
 
-                var realPointsRegex = /\[([\d|\.]*)\]/g;
-                if (cardData.name.search(realPointsRegex) > -1) {
-                    var result = realPointsRegex.exec(cardData.name);
-                    card.pointsReal = Number.parseFloat(result[1]);;
-                    cardData.name = cardData.name.replace(realPointsRegex, "").trim();
+                var realHoursRegex = /\[([\d|\.]*)\]/g;
+                if (cardData.name.search(realHoursRegex) > -1) {
+                    var result = realHoursRegex.exec(cardData.name);
+                    card.hoursReal = Number.parseFloat(result[1]);;
+                    cardData.name = cardData.name.replace(realHoursRegex, "").trim();
                 }
 
                 card.name = cardData.name;
@@ -153,17 +177,13 @@
                 }
                 card.isPlanned = true;
                 cardData.customFieldItems.forEach(function(item) {
-                    // some hard-code here
                     switch(item.idCustomField) {
-                        case "5acc4454e17810c92cec228c":
+                        case sprintCustomFields.created:
                             card.isPlanned = false;
                             card.dayCreated = getDaysBetween(treatAsUTC(item.value.date), SPRINT_BEGIN_DATE);
                             break;
-                        case "5accace42b9759e971de4e10":
-                            card.estimatedHours = Number.parseFloat(item.value.number);
-                            break;
-                        case "5accaceb2d1956c939fb9100":
-                            card.realHours = Number.parseFloat(item.value.number);
+                        case sprintCustomFields.storyPoints:
+                            card.pointsEstimated = Number.parseFloat(item.value.number);
                             break;
                     }
                 });
@@ -183,10 +203,10 @@
                 result[i] = {
                     "idealPointsLeft": 0,
                     "realPointsLeft": 0,
-                    "realPointsDone": 0
+                    "realPointsDone": 0,
+                    "realHoursDone": 0
                 };
             }
-            console.log(result);
             return result;
         }
 
@@ -204,6 +224,7 @@
                 } else {
                     day.realPointsLeft = array[index-1].realPointsLeft + day.realPointsLeft - day.realPointsDone;
                     day.realPointsDone += array[index-1].realPointsDone;
+                    day.realHoursDone += array[index-1].realHoursDone;
                 }
             });
             return burnout;
