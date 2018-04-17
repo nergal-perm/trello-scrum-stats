@@ -100,7 +100,7 @@
                 var burnout = createBurnoutTemplate();
                 $.each(data, function(index) {
                     var card = createCardFrom(data[index], sprintCustomFields);
-                    if (card.isTask) {
+                    if (card.type === "Task") {
                         if (card.isPlanned) {
                             sprintPlannedPoints += card.pointsEstimated;
                         }
@@ -111,8 +111,10 @@
                             burnout[card.dayCompleted].realPointsDone += card.pointsEstimated;
                             sprintRealPoints += card.pointsEstimated;
                         }
+                    } else if (card.type !== undefined && card.type !== "Story"){
+                        cards.push("<li>" + card.name + ", type:" + card.type + "</li>");
                     }
-                    cards.push("<li>" + card.name + "</li>");
+                    
                 });
                 calculateBurnoutStats(burnout, sprintPlannedPoints);
                 console.log(burnout);
@@ -144,6 +146,9 @@
                             break;
                         case "Scrum Type":
                             result.scrumType = data[index].id;
+                            data[index].options.forEach(function(option) {
+                                result[option.id] = option.value.text;
+                            });
                             break;
                     }
                 });
@@ -157,7 +162,7 @@
 
                 var estHoursRegex = /\(([\d|\.]*)\)/g;
                 if (cardData.name.search(estHoursRegex) > -1) {
-                    card.isTask = true;
+                    card.type = "Task";
                     var result = estHoursRegex.exec(cardData.name);
                     card.hoursEstimated = Number.parseFloat(result[1]);
                     cardData.name = cardData.name.replace(estHoursRegex, "").trim();
@@ -184,6 +189,9 @@
                             break;
                         case sprintCustomFields.storyPoints:
                             card.pointsEstimated = Number.parseFloat(item.value.number);
+                            break;
+                        case sprintCustomFields.scrumType:
+                            card.type = sprintCustomFields[item.idValue];
                             break;
                     }
                 });
