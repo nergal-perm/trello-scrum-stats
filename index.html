@@ -18,11 +18,16 @@
         <form>
             <div><select id="sprintSelect"></select></div>
             <div><button type="button" onclick="loadSprintCardsFor()">Получить данные</button></div>
+            <div><input id="formatType" type="checkbox" name="format">&nbsp; Markdown</div>
         </form>
-
     </div>
+    <div id="details"><div class="markdown"></div><div class="html"></div></div>
+    <div id="goal"><div class="markdown"></div><div class="html"></div></div>
+    <div id="dailies"><div class="markdown"></div><div class="html"></div></div>
+    <div id="retro"><div class="markdown"></div><div class="html"></div></div>
 
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script src="https://cdn.rawgit.com/showdownjs/showdown/1.8.6/dist/showdown.min.js"></script>
     <script>
         // TODO: I need to know date span of the sprint being analyzed
         var SPRINT_BEGIN_DATE = treatAsUTC("04/08/2018");
@@ -36,6 +41,13 @@
 
         $(document).ready(function() {
             loadConfig();
+            $(".markdown").hide();
+            $(".html").show();                        
+            $("#formatType").change(
+                function(){
+                    $(".markdown").toggle();
+                    $(".html").toggle();
+                });
         });
 
         function loadConfig() {
@@ -91,9 +103,9 @@
             SPRINT_BEGIN_DATE = sprint.startDate;
             sprintCustomFields = getCustomFieldsFor(sprint.id);
             var url = "https://api.trello.com/1/boards/" + sprintId +
-            "/cards?key=" + apiData.apiKey + "&token=" + apiData.apiToken + "&fields=name,dueComplete,due,labels&customFieldItems=true";
+            "/cards?key=" + apiData.apiKey + "&token=" + apiData.apiToken + "&fields=name,dueComplete,due,labels,desc&customFieldItems=true";
             $.getJSON(url, function (data) {
-                var cards = [];
+                var artifacts = [];
                 var sprintPlannedPoints = 0;
                 var sprintEstimatedPoints = 0;
                 var sprintRealPoints = 0;
@@ -112,23 +124,54 @@
                             sprintRealPoints += card.pointsEstimated;
                         }
                     } else if (card.type !== undefined && card.type !== "Story"){
-                        cards.push("<li>" + card.name + ", type:" + card.type + "</li>");
+                        // only for scrum artifacts
+                        artifacts.push(card);
                     }
                     
                 });
                 calculateBurnoutStats(burnout, sprintPlannedPoints);
-                console.log(burnout);
+                clearPage();
                 $("<p/>", {
                     html: "Очков на спринт (план): <strong>" + sprintPlannedPoints.toFixed(2) + "</strong><br/>" +
                           "Всего очков на спринт: <strong>" + sprintEstimatedPoints.toFixed(2) + "</strong><br/>" +
                           "Реализовано очков: <strong>" + sprintRealPoints.toFixed(2) + "</strong>"
-                    }).appendTo( "#testDiv");
-                $( "<ul/>", {
-                    "class": "cards-list",
-                    html: cards.join( "" )
-                }).appendTo( "#testDiv" );
-                
+                    }).appendTo( "#details");
+                outputArtifactsData(artifacts);
             });            
+        }
+
+        function clearPage() {
+            $("#goal").children().html("");
+            $("#retro").children().html("");
+            $("#dailies").children().html("");
+            $("#details").html("");         
+        }
+
+        function outputArtifactsData(artifacts) {
+            var dailiesHtml = ["<h1>Ежедневный scrum</h1>"];
+            var dailiesMarkdown = ["<p><pre>## Ежедневный scrum\n"];
+            var converter = new showdown.Converter();
+            artifacts.forEach(function(artifact) {
+                switch(artifact.type) {
+                    case "Goal":
+                        $("#goal > .html").html("<h1>Цель спринта</h1><p>" + converter.makeHtml(artifact.desc) + "</p>");
+                        $("#goal > .markdown").html("<p><pre>&gt; " + artifact.desc + "</pre></p>");
+                        break;
+                    case "Retro":
+                        $("#retro > .html").html("<h1>Ретроспектива</h1><p>" + converter.makeHtml(artifact.desc) + "</p>");
+                        $("#retro > .markdown").html("<p><pre>__Итог спринта__:\n\n" + artifact.desc + "</pre></p>");
+                        break;
+                    case "Daily":
+                        dailiesHtml.push("<h2>" + artifact.name + "</h2><p>" + 
+                            converter.makeHtml(artifact.desc) + "</p>");
+                        dailiesMarkdown.push("__" + artifact.name + "__\n");
+                        dailiesMarkdown.push(artifact.desc + "\n");
+                        break;
+                }
+            });
+            dailiesMarkdown.push("</pre></p>");
+            $("#dailies > .markdown").html(dailiesMarkdown.join("\n"));
+            $("#dailies > .html").html(dailiesHtml.join(""));
         }
 
         function getCustomFieldsFor(sprintId) {
@@ -192,6 +235,7 @@
                             break;
                         case sprintCustomFields.scrumType:
                             card.type = sprintCustomFields[item.idValue];
+                            card.desc = cardData.desc;
                             break;
                     }
                 });
@@ -256,3 +300,4 @@
     </script>
 </body>
 </html>
+
