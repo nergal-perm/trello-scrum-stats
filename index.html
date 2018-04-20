@@ -29,13 +29,6 @@
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
     <script src="https://cdn.rawgit.com/showdownjs/showdown/1.8.6/dist/showdown.min.js"></script>
     <script>
-        // TODO: I need to know date span of the sprint being analyzed
-        var SPRINT_BEGIN_DATE = treatAsUTC("04/08/2018");
-        const CUSTOM_FIELD_SPRINT_ID = "5aceccf6b9f19cf7c6ecac99";
-        const CUSTOM_FIELD_SPRINT_NUMBER = "5acdb5b1bc91f1d6ebe4bc8b";
-        const CUSTOM_FIELD_SPRINT_START_DATE = "5acdb5bb4b208d21a7fc36c5";
-        const CUSTOM_FIELD_SPRINT_END_DATE = "5acdb5c2c97abe259d435942";
-
         var apiData = {};
         var sprints = [];
 
@@ -68,16 +61,16 @@
                     var sprint = {};
                     data[item].customFieldItems.forEach(function(customField) {
                         switch(customField.idCustomField) {
-                            case CUSTOM_FIELD_SPRINT_ID: 
+                            case apiData.customFieldSprintID: 
                                 sprint.id = customField.value.text;
                                 break;
-                            case CUSTOM_FIELD_SPRINT_NUMBER:
+                            case apiData.customFieldSprintNumber:
                                 sprint.number = customField.value.number;
                                 break;
-                            case CUSTOM_FIELD_SPRINT_START_DATE:
+                            case apiData.customFieldSprintStartDate:
                                 sprint.startDate = treatAsUTC(customField.value.date);
                                 break;
-                            case CUSTOM_FIELD_SPRINT_END_DATE:
+                            case apiData.customFieldSprintEndDate:
                                 sprint.endDate = treatAsUTC(customField.value.date);
                                 break;                             
                         }
@@ -100,21 +93,47 @@
                 alert("Sprint not found");
                 return;
             }
-            SPRINT_BEGIN_DATE = sprint.startDate;
-            sprintCustomFields = getCustomFieldsFor(sprint.id);
+            var sprintCustomFields = getCustomFieldsFor(sprint.id)
             var url = "https://api.trello.com/1/boards/" + sprintId +
             "/cards?key=" + apiData.apiKey + "&token=" + apiData.apiToken + "&fields=name,dueComplete,due,labels,desc&customFieldItems=true";
             $.getJSON(url, function (data) {
+                var labels = {};
                 var artifacts = [];
                 var sprintPlannedPoints = 0;
                 var sprintEstimatedPoints = 0;
                 var sprintRealPoints = 0;
-                var burnout = createBurnoutTemplate();
+                var burnout = createBurnoutTemplate(sprint);
                 $.each(data, function(index) {
-                    var card = createCardFrom(data[index], sprintCustomFields);
+                    var card = createCardFrom(data[index], sprintCustomFields, sprint);
                     if (card.type === "Task") {
+                        // TODO: check if a card has a label at all
+                        var statLabel = {};
+                        if (!labels.hasOwnProperty(card.label.id)) {
+                            statLabel = {
+                                name: card.label.name,
+                                color: card.label.color,
+                                plannedTasks: 0,
+                                allTasks: 0,
+                                doneTasks: 0,
+                                plannedPoints: 0,
+                                allPoints: 0,
+                                donePoints: 0,
+                                plannedHours: 0,
+                                workedHours: 0
+                            }
+                            labels[card.label.id] = statLabel;
+                        } else {
+                            statLabel = labels[card.label.id];
+                        }
+
+                        statLabel.allTasks += 1;
+                        statLabel.allPoints += card.pointsEstimated;
+                        statLabel.plannedHours += card.hoursEstimated;
+
                         if (card.isPlanned) {
                             sprintPlannedPoints += card.pointsEstimated;
+                            statLabel.plannedTasks += 1;
+                            statLabel.plannedPoints += card.pointsEstimated;
                         }
                         sprintEstimatedPoints += card.pointsEstimated;
                         burnout[card.dayCreated].realPointsLeft += card.pointsEstimated;
@@ -122,13 +141,15 @@
                             burnout[card.dayCompleted].realHoursDone += card.hoursReal;
                             burnout[card.dayCompleted].realPointsDone += card.pointsEstimated;
                             sprintRealPoints += card.pointsEstimated;
+                            statLabel.doneTasks += 1;
+                            statLabel.donePoints += card.pointsEstimated;
+                            statLabel.workedHours += card.hoursReal;
                         }
-                    } else if (card.type !== undefined && card.type !== "Story"){
-                        // only for scrum artifacts
+                    } else if (card.type !== undefined){
                         artifacts.push(card);
                     }
-                    
                 });
+                console.log(labels);
                 calculateBurnoutStats(burnout, sprintPlannedPoints);
                 clearPage();
                 $("<p/>", {
@@ -136,7 +157,7 @@
                           "Всего очков на спринт: <strong>" + sprintEstimatedPoints.toFixed(2) + "</strong><br/>" +
                           "Реализовано очков: <strong>" + sprintRealPoints.toFixed(2) + "</strong>"
                     }).appendTo( "#details");
-                outputArtifactsData(artifacts);
+                outputArtifactsData(artifacts, burnout, sprintPlannedPoints);
             });            
         }
 
@@ -147,59 +168,79 @@
             $("#details").html("");         
         }
 
-        function outputArtifactsData(artifacts) {
+        function outputArtifactsData(artifacts, burnout, plannedPoints) {
             var dailiesHtml = ["<h1>Ежедневный scrum</h1>"];
             var dailiesMarkdown = ["<p><pre>## Ежедневный scrum\n"];
+            var storiesHtml = [];
+            var storiesMarkdown = [];
             var converter = new showdown.Converter();
             artifacts.forEach(function(artifact) {
                 switch(artifact.type) {
                     case "Goal":
-                        $("#goal > .html").html("<h1>Цель спринта</h1><p>" + converter.makeHtml(artifact.desc) + "</p>");
-                        $("#goal > .markdown").html("<p><pre>&gt; " + artifact.desc + "</pre></p>");
+                        storiesHtml.push("<h1>Цель спринта</h1><p>" + converter.makeHtml(artifact.desc) + "</p>" + 
+                            "<h2>Реализуемые истории:</h2><ul>");
+                        storiesMarkdown.push("<p><pre>__Цель спринта:__\n\n&gt; " + artifact.desc + "\n\n__Реализуемые истории__\n\n");
                         break;
                     case "Retro":
                         $("#retro > .html").html("<h1>Ретроспектива</h1><p>" + converter.makeHtml(artifact.desc) + "</p>");
                         $("#retro > .markdown").html("<p><pre>__Итог спринта__:\n\n" + artifact.desc + "</pre></p>");
                         break;
                     case "Daily":
-                        dailiesHtml.push("<h2>" + artifact.name + "</h2><p>" + 
+                        dailiesHtml.push("<h2>" + artifact.name + " " + getPointsStatFor(artifact.dayCompleted, burnout, plannedPoints) + "</h2><p>" + 
                             converter.makeHtml(artifact.desc) + "</p>");
                         dailiesMarkdown.push("__" + artifact.name + "__\n");
                         dailiesMarkdown.push(artifact.desc + "\n");
                         break;
+                    case "Story":
+                        storiesHtml.push("<li>" + artifact.name + "</li>");
+                        storiesMarkdown.push("* " + artifact.name + "\n");
                 }
             });
             dailiesMarkdown.push("</pre></p>");
+            storiesMarkdown.push("</pre></p>");
+            $("#goal > .html").html(storiesHtml.join(""));
+            $("#goal > .markdown").html(storiesMarkdown.join(""));
             $("#dailies > .markdown").html(dailiesMarkdown.join("\n"));
             $("#dailies > .html").html(dailiesHtml.join(""));
         }
 
-        function getCustomFieldsFor(sprintId) {
-            var url = "https://api.trello.com/1/boards/" + sprintId +
-            "/customFields?key=" + apiData.apiKey + "&token=" + apiData.apiToken;
-            var result = {};
-            $.getJSON(url, function (data) {
-                $.each(data, function(index) {
-                    switch(data[index].name) {
-                        case "Created": 
-                            result.created = data[index].id;
-                            break;
-                        case "Story Points":
-                            result.storyPoints = data[index].id;
-                            break;
-                        case "Scrum Type":
-                            result.scrumType = data[index].id;
-                            data[index].options.forEach(function(option) {
-                                result[option.id] = option.value.text;
-                            });
-                            break;
-                    }
-                });
-            });
+        function getPointsStatFor(day, burnout, plannedPoints) {
+            var result = "";
+            if (day === 0) {
+                result = plannedPoints + "/" + plannedPoints;
+            } else {
+                result = burnout[day-1].realPointsLeft + "/" + burnout[day-1].idealPointsLeft;
+            }
+            
             return result;
         }
 
-        function createCardFrom(cardData, sprintCustomFields) {
+        function getCustomFieldsFor(sprintId) {
+            var url = "https://api.trello.com/1/boards/" + sprintId + "/customFields" + 
+                "?key=" + apiData.apiKey + "&token=" + apiData.apiToken;
+                var result = {};
+                $.getJSON(url, function (response) {
+                    $.each(response, function(index) {
+                        switch(response[index].name) {
+                            case "Created": 
+                                result.created = response[index].id;
+                                break;
+                            case "Story Points":
+                                result.storyPoints = response[index].id;
+                                break;
+                            case "Scrum Type":
+                                result.scrumType = response[index].id;
+                                response[index].options.forEach(function(option) {
+                                    result[option.id] = option.value.text;
+                                });
+                                break;  
+                        }
+                    });
+                });
+            return result;
+        }
+
+        function createCardFrom(cardData, sprintCustomFields, sprint) {
             if (typeof(cardData) === "object") {
                 var card = {};
 
@@ -221,14 +262,14 @@
                 card.name = cardData.name;
                 card.isCompleted = !!cardData.dueComplete;
                 if (card.isCompleted === true) {
-                    card.dayCompleted = getDaysBetween(treatAsUTC(cardData.due), SPRINT_BEGIN_DATE);
+                    card.dayCompleted = getDaysBetween(treatAsUTC(cardData.due), sprint.startDate);
                 }
                 card.isPlanned = true;
                 cardData.customFieldItems.forEach(function(item) {
                     switch(item.idCustomField) {
                         case sprintCustomFields.created:
                             card.isPlanned = false;
-                            card.dayCreated = getDaysBetween(treatAsUTC(item.value.date), SPRINT_BEGIN_DATE);
+                            card.dayCreated = getDaysBetween(treatAsUTC(item.value.date), sprint.startDate);
                             break;
                         case sprintCustomFields.storyPoints:
                             card.pointsEstimated = Number.parseFloat(item.value.number);
@@ -239,6 +280,9 @@
                             break;
                     }
                 });
+                if (cardData.labels.length > 0) {
+                    card.label = cardData.labels[0];
+                }
                 if(card.isPlanned) {
                     card.dayCreated = 0;
                 }
@@ -249,10 +293,13 @@
             }
         }
 
-        function createBurnoutTemplate() {
-            var result = new Array(7);
-            for (var i=0; i<7; i++) {
+        function createBurnoutTemplate(sprint) {
+            var daysInSprint = getDaysBetween(sprint.endDate, sprint.startDate) + 1;
+            var result = new Array(daysInSprint);
+            for (var i=0; i<daysInSprint; i++) {
+                
                 result[i] = {
+                    "date": addDays(sprint.startDate, i),
                     "idealPointsLeft": 0,
                     "realPointsLeft": 0,
                     "realPointsDone": 0,
@@ -260,6 +307,12 @@
                 };
             }
             return result;
+        }
+
+        function addDays(date, days) {
+            var dat = new Date(date);
+            dat.setDate(dat.getDate() + days);
+            return dat;
         }
 
         function getDaysBetween(date1, date2) {

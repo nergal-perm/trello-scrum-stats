@@ -1,5 +1,9 @@
 {
     "apiKey": "some value",
     "apiToken": "another value",
-    "sprintsListID": "yet another value"
+    "sprintsListID": "yet another value",
+    "customFieldSprintID": "someID",
+    "customFieldSprintNumber": "someID",
+    "customFieldSprintStartDate": "someID",
+    "customFieldSprintEndDate": "someID"
 }
