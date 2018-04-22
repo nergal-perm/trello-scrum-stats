@@ -149,7 +149,6 @@
                         artifacts.push(card);
                     }
                 });
-                console.log(labels);
                 calculateBurnoutStats(burnout, sprintPlannedPoints);
                 clearPage();
                 $("<p/>", {
@@ -186,9 +185,10 @@
                         $("#retro > .markdown").html("<p><pre>__Итог спринта__:\n\n" + artifact.desc + "</pre></p>");
                         break;
                     case "Daily":
-                        dailiesHtml.push("<h2>" + artifact.name + " " + getPointsStatFor(artifact.dayCompleted, burnout, plannedPoints) + "</h2><p>" + 
+                        var pointsStat = getPointsStatFor(artifact.dayCompleted, burnout, plannedPoints);
+                        dailiesHtml.push("<h2>Дата: " + pointsStat + "</h2><p>" + 
                             converter.makeHtml(artifact.desc) + "</p>");
-                        dailiesMarkdown.push("__" + artifact.name + "__\n");
+                        dailiesMarkdown.push("__Дата: " + pointsStat + "__\n");
                         dailiesMarkdown.push(artifact.desc + "\n");
                         break;
                     case "Story":
@@ -205,11 +205,14 @@
         }
 
         function getPointsStatFor(day, burnout, plannedPoints) {
-            var result = "";
+            var options = { year: 'numeric', month: 'numeric', day: 'numeric' };
+            var today  = burnout[day].date;
+            var result = today.toLocaleDateString("ru-RU", options) + " Осталось очков: ";
+
             if (day === 0) {
-                result = plannedPoints + "/" + plannedPoints;
+                result += plannedPoints + "/" + plannedPoints;
             } else {
-                result = burnout[day-1].realPointsLeft + "/" + burnout[day-1].idealPointsLeft;
+                result += burnout[day-1].realPointsLeft + "/" + burnout[day-1].idealPointsLeft;
             }
             
             return result;
