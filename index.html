@@ -192,8 +192,14 @@
                         dailiesMarkdown.push(artifact.desc + "\n");
                         break;
                     case "Story":
-                        storiesHtml.push("<li>" + artifact.name + "</li>");
-                        storiesMarkdown.push("* " + artifact.name + "\n");
+                        if (artifact.isCompleted) {
+                            storiesHtml.push("<li><del>" + artifact.name + "</del></li>");
+                            storiesMarkdown.push("* `[x]` " + artifact.name + "\n");
+                        } else {
+                            storiesHtml.push("<li>" + artifact.name + "</li>");
+                            storiesMarkdown.push("* `[ ]` " + artifact.name + "\n");
+                        }
+
                 }
             });
             dailiesMarkdown.push("</pre></p>");
