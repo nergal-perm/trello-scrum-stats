@@ -5,10 +5,6 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>Sample trello queries</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- 
-    <link rel="stylesheet" type="text/css" media="screen" href="main.css" />
-    <script src="main.js"></script>
-    -->
 </head>
 <body>
 
@@ -105,7 +101,10 @@
                 var burnout = createBurnoutTemplate(sprint);
                 $.each(data, function(index) {
                     var card = createCardFrom(data[index], sprintCustomFields, sprint);
-                    if (card.type === "Task") {
+                    // since sprint 2 Tasks are deprecated, using stories instead
+                    var storiesSinceSprintTwo = (card.type === "Story" && Number.parseInt(sprint.number) >= 2);
+                    var tasksBeforeSprintTwo = (card.type === "Task" && Number.parseInt(sprint.number) < 2);
+                    if ( tasksBeforeSprintTwo || storiesSinceSprintTwo ) {
                         // TODO: check if a card has a label at all
                         var statLabel = {};
                         if (!labels.hasOwnProperty(card.label.id)) {
@@ -172,13 +171,15 @@
             var dailiesMarkdown = ["<p><pre>## Ежедневный scrum\n"];
             var storiesHtml = [];
             var storiesMarkdown = [];
+            var goalHtml = "";
+            var goalMarkdown = "";
             var converter = new showdown.Converter();
             artifacts.forEach(function(artifact) {
                 switch(artifact.type) {
                     case "Goal":
-                        storiesHtml.push("<h1>Цель спринта</h1><p>" + converter.makeHtml(artifact.desc) + "</p>" + 
-                            "<h2>Реализуемые истории:</h2><ul>");
-                        storiesMarkdown.push("<p><pre>__Цель спринта:__\n\n&gt; " + artifact.desc + "\n\n__Реализуемые истории__\n\n");
+                        goalHtml ="<h1>Цель спринта</h1><p>" + converter.makeHtml(artifact.desc) + "</p>" + 
+                            "<h2>Реализуемые истории:</h2><ul>";
+                        goalMarkdown = "<p><pre>__Цель спринта:__\n\n&gt; " + artifact.desc + "\n\n__Реализуемые истории__\n\n";
                         break;
                     case "Retro":
                         $("#retro > .html").html("<h1>Ретроспектива</h1><p>" + converter.makeHtml(artifact.desc) + "</p>");
@@ -204,6 +205,8 @@
             });
             dailiesMarkdown.push("</pre></p>");
             storiesMarkdown.push("</pre></p>");
+            storiesHtml.unshift(goalHtml);
+            storiesMarkdown.unshift(goalMarkdown);
             $("#goal > .html").html(storiesHtml.join(""));
             $("#goal > .markdown").html(storiesMarkdown.join(""));
             $("#dailies > .markdown").html(dailiesMarkdown.join("\n"));
@@ -212,15 +215,17 @@
 
         function getPointsStatFor(day, burnout, plannedPoints) {
             var options = { year: 'numeric', month: 'numeric', day: 'numeric' };
-            var today  = burnout[day].date;
-            var result = today.toLocaleDateString("ru-RU", options) + " Осталось очков: ";
+            var result = "";
+            if (burnout[day]) {
+                var today  = burnout[day].date;
+                result = today.toLocaleDateString("ru-RU", options) + " Осталось очков: ";
 
-            if (day === 0) {
-                result += plannedPoints + "/" + plannedPoints;
-            } else {
-                result += burnout[day-1].realPointsLeft + "/" + burnout[day-1].idealPointsLeft;
+                if (day === 0) {
+                    result += plannedPoints + "/" + plannedPoints;
+                } else {
+                    result += burnout[day-1].realPointsLeft + "/" + burnout[day-1].idealPointsLeft;
+                }
             }
-            
             return result;
         }
 
