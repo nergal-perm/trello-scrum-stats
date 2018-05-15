@@ -13,7 +13,7 @@ $(document).ready(function() {
 });
 
 function loadConfig() {
-    $.getJSON( "assets/config.json", function( data ) {
+    $.getJSON( "config/config.json", function( data ) {
         $.each( data, function( key, val ) {
             apiData[key] = val;
         });

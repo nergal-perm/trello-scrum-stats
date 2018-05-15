@@ -1,5 +1,5 @@
 # Sensistive data
-/assets/config.json
+/src/config/config.json
 
 # Dependency directories
 node_modules/
@@ -17,3 +17,6 @@ yarn-error.log*
 
 # IDE settings
 .vscode/
+
+# Generated documentation
+_book/

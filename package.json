@@ -1,7 +1,7 @@
 {
   "name": "trello-scrum-stats",
   "version": "1.0.0",
-  "description": "1. Карточки спринтов на доске **Бэклог** должны содержать обязательно заполненные пользовательские поля:\r \t* `Number` - номер спринта, число\r \t* `Start` - дата начала спринта, дата\r \t* `End` - дата окончания спринта, дата\r \t* `Board ID` - идентификатор соответствующей доски, строка\r 1. Карточки отдельных выполняемых задач на доске конкретного спринта должны удовлетворять следующим требованиям:\r \t* В заголовке указаны планируемые затраты времени в круглых скобках. Соответственно, при разборе карточки должны содержать regex `/\\([\\d|\\.]*\\)/g` в поле _name_\r \t* Для выполненных задач в заголовке должны быть указаны фактические затраты времени в квадратных скобках, должен быть установлен срок выполнения и установлена отметка о выполнении.  У них при разборе свойство _dueComplete_ = true, в поле _name_ содержится regex `/\\[[\\d|\\.]*\\]/g`\r 1. В пользовательском поле StoryPoints для каждой задачи указывать сложность задачи в очках",
+  "description": "",
   "main": "index.js",
   "dependencies": {},
   "devDependencies": {
@@ -9,7 +9,12 @@
     "jsdoc-to-markdown": "^4.0.1"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "docs:api": "jsdoc2md --files src/**/*.js > docs/api.md",
+    "docs:prepare": "gitbook install",
+    "docs:build": "npm run docs:prepare && npm run docs:api && gitbook build",
+    "docs:serve": "npm run docs:prepare && npm run docs:api && gitbook serve",
+    "docs:clean": "rm -rf _book"
   },
   "repository": {
     "type": "git",
