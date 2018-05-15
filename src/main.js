@@ -1,8 +1,13 @@
-var apiData = {};
-var sprints = [];
+let apiConfig = {};
+let sprints = [];
 
+/**
+ * Document setup: loads configuration and all the sprints metadata,
+ * sets up web page layout (very primitive, though) and assigns handler
+ * to `formatType` checkbox
+ */
 $(document).ready(function() {
-    loadConfig();
+    loadSprintDataUsingSavedConfig();
     $(".markdown").hide();
     $(".html").show();                        
     $("#formatType").change(
@@ -12,18 +17,36 @@ $(document).ready(function() {
         });
 });
 
-function loadConfig() {
+/**
+ * Loads configuration from `config` folder, then delegates to
+ * `getAllTheSprints` function to asquire sprints metadata.
+ */
+function loadSprintDataUsingSavedConfig() {
     $.getJSON( "config/config.json", function( data ) {
-        $.each( data, function( key, val ) {
-            apiData[key] = val;
-        });
+        fillApiConfigWithData(data);
         getAllTheSprints();
     });
 }
 
+/**
+ * Fills `apiConfig` (empty object stored in a global variable) with
+ * sensitive data (api tokens and so on) from config files.
+ * 
+ * @param {Object} data 
+ */
+function fillApiConfigWithData(data) {
+    $.each( data, function( key, val ) {
+        apiConfig[key] = val;
+    });
+}
+
+/**
+ * 
+ * 
+ */
 function getAllTheSprints() {
-    var url = "https://api.trello.com/1/lists/" + apiData.sprintsListID +
-    "/cards?key=" + apiData.apiKey + "&token=" + apiData.apiToken + "&fields=name,id&customFieldItems=true";
+    let { sprintsListID, apiKey, apiToken } = apiConfig;
+    var url = `https://api.trello.com/1/lists/${sprintsListID}/cards?key=${apiKey}&token=${apiToken}&fields=name,id&customFieldItems=true`;
     $.getJSON(url, function (data) {
         var items = [];
         $.each(data, function(item) {
@@ -37,6 +60,7 @@ function getAllTheSprints() {
         $( "#sprintSelect").html(items.join(""));
     });
 }
+
 /**
  * Parses provided `TrelloCard` and creates valid Sprint object based on that card
  * custom fields
@@ -48,16 +72,16 @@ function getSprintDataFrom(sprintCard) {
     var sprint = {};
     sprintCard.customFieldItems.forEach(function(customField) {
         switch(customField.idCustomField) {
-            case apiData.customFieldSprintID: 
+            case apiConfig.customFieldSprintID: 
                 sprint.id = customField.value.text;
                 break;
-            case apiData.customFieldSprintNumber:
+            case apiConfig.customFieldSprintNumber:
                 sprint.number = customField.value.number;
                 break;
-            case apiData.customFieldSprintStartDate:
+            case apiConfig.customFieldSprintStartDate:
                 sprint.startDate = treatAsUTC(customField.value.date);
                 break;
-            case apiData.customFieldSprintEndDate:
+            case apiConfig.customFieldSprintEndDate:
                 sprint.endDate = treatAsUTC(customField.value.date);
                 break;                             
         }
@@ -75,7 +99,7 @@ function loadSprintCardsFor() {
     }
     var sprintCustomFields = getCustomFieldsFor(sprint.id)
     var url = "https://api.trello.com/1/boards/" + sprintId +
-    "/cards?key=" + apiData.apiKey + "&token=" + apiData.apiToken + "&fields=name,dueComplete,due,labels,desc&customFieldItems=true";
+    "/cards?key=" + apiConfig.apiKey + "&token=" + apiConfig.apiToken + "&fields=name,dueComplete,due,labels,desc&customFieldItems=true";
     $.getJSON(url, function (data) {
         var labels = {};
         var artifacts = [];
@@ -218,7 +242,7 @@ function getPointsStatFor(day, burnout, plannedPoints) {
 
 function getCustomFieldsFor(sprintId) {
     var url = "https://api.trello.com/1/boards/" + sprintId + "/customFields" + 
-        "?key=" + apiData.apiKey + "&token=" + apiData.apiToken;
+        "?key=" + apiConfig.apiKey + "&token=" + apiConfig.apiToken;
         var result = {};
         $.getJSON(url, function (response) {
             $.each(response, function(index) {
