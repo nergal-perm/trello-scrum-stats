@@ -41,12 +41,12 @@ function fillApiConfigWithData(data) {
 }
 
 /**
- * 
- * 
+ * Populates global sprints array and creates options for the web page dropdown
  */
 function getAllTheSprints() {
     let { sprintsListID, apiKey, apiToken } = apiConfig;
-    var url = `https://api.trello.com/1/lists/${sprintsListID}/cards?key=${apiKey}&token=${apiToken}&fields=name,id&customFieldItems=true`;
+    var url = `https://api.trello.com/1/lists/${sprintsListID}/cards?key=${apiKey}` + 
+              `&token=${apiToken}&fields=name,id&customFieldItems=true`;
     $.getJSON(url, function (data) {
         var items = [];
         $.each(data, function(item) {
@@ -65,8 +65,8 @@ function getAllTheSprints() {
  * Parses provided `TrelloCard` and creates valid Sprint object based on that card
  * custom fields
  * 
- * @param {TrelloCard} sprintCard 
- * @returns {Sprint} sprint general info
+ * @param {Object} sprintCard 
+ * @returns {Object} sprint general info
  */
 function getSprintDataFrom(sprintCard) {
     var sprint = {};
@@ -90,85 +90,109 @@ function getSprintDataFrom(sprintCard) {
     return sprint;
 }
 
-function loadSprintCardsFor() {
+/**
+ * Called by pressing a button on a web page. Starts the whole process of 
+ * creating the sprint report. 
+ * 
+ * @returns 
+ */
+function createSprintReport() {
     var sprintId = $("#sprintSelect").val();
     var sprint = getSprintById(sprintId);
     if (sprint === null) {  
         alert("Sprint not found");
         return;
     }
-    var sprintCustomFields = getCustomFieldsFor(sprint.id)
-    var url = "https://api.trello.com/1/boards/" + sprintId +
-    "/cards?key=" + apiConfig.apiKey + "&token=" + apiConfig.apiToken + "&fields=name,dueComplete,due,labels,desc&customFieldItems=true";
+    var url = `https://api.trello.com/1/boards/${sprintId}/cards?key=${apiConfig.apiKey}` +
+              `&token=${apiConfig.apiToken}&fields=name,dueComplete,due,labels,desc&customFieldItems=true`;
     $.getJSON(url, function (data) {
-        var labels = {};
-        var artifacts = [];
-        var sprintPlannedPoints = 0;
-        var sprintEstimatedPoints = 0;
-        var sprintRealPoints = 0;
         var burnout = createBurnoutTemplate(sprint);
-        $.each(data, function(index) {
-            var card = createCardFrom(data[index], sprintCustomFields, sprint);
-            // since sprint 2 Tasks are deprecated, using stories instead
-            var storiesSinceSprintTwo = (card.type === "Story" && Number.parseInt(sprint.number) >= 2);
-            var tasksBeforeSprintTwo = (card.type === "Task" && Number.parseInt(sprint.number) < 2);
-            if ( tasksBeforeSprintTwo || storiesSinceSprintTwo ) {
-                // TODO: check if a card has a label at all
-                var statLabel = {};
-                if (!labels.hasOwnProperty(card.label.id)) {
-                    statLabel = {
-                        name: card.label.name,
-                        color: card.label.color,
-                        plannedTasks: 0,
-                        allTasks: 0,
-                        doneTasks: 0,
-                        plannedPoints: 0,
-                        allPoints: 0,
-                        donePoints: 0,
-                        plannedHours: 0,
-                        workedHours: 0
-                    }
-                    labels[card.label.id] = statLabel;
-                } else {
-                    statLabel = labels[card.label.id];
-                }
-
-                statLabel.allTasks += 1;
-                statLabel.allPoints += card.pointsEstimated;
-                statLabel.plannedHours += card.hoursEstimated;
-
-                if (card.isPlanned) {
-                    sprintPlannedPoints += card.pointsEstimated;
-                    statLabel.plannedTasks += 1;
-                    statLabel.plannedPoints += card.pointsEstimated;
-                }
-                sprintEstimatedPoints += card.pointsEstimated;
-                burnout[card.dayCreated].realPointsLeft += card.pointsEstimated;
-                if (card.isCompleted) {
-                    burnout[card.dayCompleted].realHoursDone += card.hoursReal;
-                    burnout[card.dayCompleted].realPointsDone += card.pointsEstimated;
-                    sprintRealPoints += card.pointsEstimated;
-                    statLabel.doneTasks += 1;
-                    statLabel.donePoints += card.pointsEstimated;
-                    statLabel.workedHours += card.hoursReal;
-                }
-                if (storiesSinceSprintTwo && card.type === "Story") {
-                    artifacts.push(card);
-                }
-            } else if (card.type !== undefined){
-                artifacts.push(card);
-            }
+        var promise = new Promise(function (resolve, reject) {
+            var stats = calculateCardStats(data, sprint, burnout);
+            resolve(stats);
         });
-        calculateBurnoutStats(burnout, sprintPlannedPoints);
-        clearPage();
-        $("<p/>", {
-            html: "Очков на спринт (план): <strong>" + sprintPlannedPoints.toFixed(2) + "</strong><br/>" +
-                    "Всего очков на спринт: <strong>" + sprintEstimatedPoints.toFixed(2) + "</strong><br/>" +
-                    "Реализовано очков: <strong>" + sprintRealPoints.toFixed(2) + "</strong>"
-            }).appendTo( "#details");
-        outputArtifactsData(artifacts, burnout, sprintPlannedPoints);
+        promise.then(function(stats) {
+            calculateBurnoutStats(burnout, stats.sprintPlannedPoints);
+            clearPage();
+            $("<p/>", {
+                html: "Очков на спринт (план): <strong>" + stats.sprintPlannedPoints.toFixed(2) + "</strong><br/>" +
+                        "Всего очков на спринт: <strong>" + stats.sprintEstimatedPoints.toFixed(2) + "</strong><br/>" +
+                        "Реализовано очков: <strong>" + stats.sprintRealPoints.toFixed(2) + "</strong>"
+                }).appendTo( "#details");
+            outputArtifactsData(stats.artifacts, burnout, stats.sprintPlannedPoints);                
+        });
+        promise.catch(function(error) {
+            console.log(JSON.stringify(error));
+        });
     });            
 }
+
+function calculateCardStats(data, sprint, burnout) {
+    var stats = {
+        sprintPlannedPoints: 0,
+        sprintEstimatedPoints: 0,
+        sprintRealPoints: 0,
+        artifacts: [],
+        labels: {}
+    };
+    var sprintCustomFields = getCustomFieldsFor(sprint.id);
+    data.forEach(function(item, index, array) {
+        var card = createCardFrom(item, sprintCustomFields, sprint);
+        // since sprint 2 Tasks are deprecated, using stories instead
+        var storiesSinceSprintTwo = (card.type === "Story" && Number.parseInt(sprint.number) >= 2);
+        var tasksBeforeSprintTwo = (card.type === "Task" && Number.parseInt(sprint.number) < 2);
+        console.log(card, storiesSinceSprintTwo, tasksBeforeSprintTwo);
+        if ( tasksBeforeSprintTwo || storiesSinceSprintTwo ) {
+            // TODO: check if a card has a label at all
+            var statLabel = {};
+            if (!stats.labels.hasOwnProperty(card.label.id)) {
+                statLabel = {
+                    name: card.label.name,
+                    color: card.label.color,
+                    plannedTasks: 0,
+                    allTasks: 0,
+                    doneTasks: 0,
+                    plannedPoints: 0,
+                    allPoints: 0,
+                    donePoints: 0,
+                    plannedHours: 0,
+                    workedHours: 0
+                }
+                stats.labels[card.label.id] = statLabel;
+            } else {
+                statLabel = stats.labels[card.label.id];
+            }
+
+            statLabel.allTasks += 1;
+            statLabel.allPoints += card.pointsEstimated;
+            statLabel.plannedHours += card.hoursEstimated;
+
+            if (card.isPlanned) {
+                stats.sprintPlannedPoints += card.pointsEstimated;
+                statLabel.plannedTasks += 1;
+                statLabel.plannedPoints += card.pointsEstimated;
+            }
+            stats.sprintEstimatedPoints += card.pointsEstimated;
+            burnout[card.dayCreated].realPointsLeft += card.pointsEstimated;
+            if (card.isCompleted) {
+                burnout[card.dayCompleted].realHoursDone += card.hoursReal;
+                burnout[card.dayCompleted].realPointsDone += card.pointsEstimated;
+                stats.sprintRealPoints += card.pointsEstimated;
+                statLabel.doneTasks += 1;
+                statLabel.donePoints += card.pointsEstimated;
+                statLabel.workedHours += card.hoursReal;
+            }
+            if (storiesSinceSprintTwo && card.type === "Story") {
+                stats.artifacts.push(card);
+            }
+        } else if (card.type !== undefined){
+            stats.artifacts.push(card);
+        }
+    });
+    console.log("Returning from calculateCardStats\n" + JSON.stringify(stats));
+    return stats;   
+}
+
 
 function clearPage() {
     $("#goal").children().html("");
