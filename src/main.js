@@ -79,7 +79,7 @@ function getSprintDataFrom(sprintCard) {
                 sprint.number = customField.value.number;
                 break;
             case apiConfig.customFieldSprintStartDate:
-                sprint.startDate = treatAsUTC(customField.value.date);
+                    sprint.startDate = treatAsUTC(customField.value.date);
                 break;
             case apiConfig.customFieldSprintEndDate:
                 sprint.endDate = treatAsUTC(customField.value.date);
@@ -103,15 +103,18 @@ function createSprintReport() {
         alert("Sprint not found");
         return;
     }
-    var url = `https://api.trello.com/1/boards/${sprintId}/cards?key=${apiConfig.apiKey}` +
-              `&token=${apiConfig.apiToken}&fields=name,dueComplete,due,labels,desc&customFieldItems=true`;
-    $.getJSON(url, function (data) {
-        var burnout = createBurnoutTemplate(sprint);
-        var promise = new Promise(function (resolve, reject) {
-            var stats = calculateCardStats(data, sprint, burnout);
-            resolve(stats);
+    const cardsPromise = new Promise((resolve, reject) => {
+        var url = `https://api.trello.com/1/boards/${sprintId}/cards?key=${apiConfig.apiKey}` +
+            `&token=${apiConfig.apiToken}&fields=name,dueComplete,due,labels,desc&customFieldItems=true`;
+        $.getJSON(url, function (data) {
+            resolve(data);
         });
-        promise.then(function(stats) {
+    });
+
+    cardsPromise.then(function(data) {
+        var burnout = createBurnoutTemplate(sprint);
+        calculateCardStats(data, sprint, burnout).then(function(stats) {
+            console.log("Calculated card stats", JSON.stringify(stats));
             calculateBurnoutStats(burnout, stats.sprintPlannedPoints);
             clearPage();
             $("<p/>", {
@@ -120,11 +123,8 @@ function createSprintReport() {
                         "Реализовано очков: <strong>" + stats.sprintRealPoints.toFixed(2) + "</strong>"
                 }).appendTo( "#details");
             outputArtifactsData(stats.artifacts, burnout, stats.sprintPlannedPoints);                
-        });
-        promise.catch(function(error) {
-            console.log(JSON.stringify(error));
-        });
-    });            
+        });            
+    });
 }
 
 function calculateCardStats(data, sprint, burnout) {
@@ -135,62 +135,64 @@ function calculateCardStats(data, sprint, burnout) {
         artifacts: [],
         labels: {}
     };
-    var sprintCustomFields = getCustomFieldsFor(sprint.id);
-    data.forEach(function(item, index, array) {
-        var card = createCardFrom(item, sprintCustomFields, sprint);
-        // since sprint 2 Tasks are deprecated, using stories instead
-        var storiesSinceSprintTwo = (card.type === "Story" && Number.parseInt(sprint.number) >= 2);
-        var tasksBeforeSprintTwo = (card.type === "Task" && Number.parseInt(sprint.number) < 2);
-        console.log(card, storiesSinceSprintTwo, tasksBeforeSprintTwo);
-        if ( tasksBeforeSprintTwo || storiesSinceSprintTwo ) {
-            // TODO: check if a card has a label at all
-            var statLabel = {};
-            if (!stats.labels.hasOwnProperty(card.label.id)) {
-                statLabel = {
-                    name: card.label.name,
-                    color: card.label.color,
-                    plannedTasks: 0,
-                    allTasks: 0,
-                    doneTasks: 0,
-                    plannedPoints: 0,
-                    allPoints: 0,
-                    donePoints: 0,
-                    plannedHours: 0,
-                    workedHours: 0
+    
+    return new Promise((resolve, reject) => {
+        getCustomFieldsFor(sprint.id).then(function(sprintCustomFields) {
+            data.forEach(function(item, index, array) {
+                var card = createCardFrom(item, sprintCustomFields, sprint);
+                // since sprint 2 Tasks are deprecated, using stories instead
+                var storiesSinceSprintTwo = (card.type === "Story" && Number.parseInt(sprint.number) >= 2);
+                var tasksBeforeSprintTwo = (card.type === "Task" && Number.parseInt(sprint.number) < 2);
+                if ( tasksBeforeSprintTwo || storiesSinceSprintTwo ) {
+                    // TODO: check if a card has a label at all
+                    var statLabel = {};
+                    if (!stats.labels.hasOwnProperty(card.label.id)) {
+                        statLabel = {
+                            name: card.label.name,
+                            color: card.label.color,
+                            plannedTasks: 0,
+                            allTasks: 0,
+                            doneTasks: 0,
+                            plannedPoints: 0,
+                            allPoints: 0,
+                            donePoints: 0,
+                            plannedHours: 0,
+                            workedHours: 0
+                        }
+                        stats.labels[card.label.id] = statLabel;
+                    } else {
+                        statLabel = stats.labels[card.label.id];
+                    }
+        
+                    statLabel.allTasks += 1;
+                    statLabel.allPoints += card.pointsEstimated;
+                    statLabel.plannedHours += card.hoursEstimated;
+        
+                    if (card.isPlanned) {
+                        stats.sprintPlannedPoints += card.pointsEstimated;
+                        statLabel.plannedTasks += 1;
+                        statLabel.plannedPoints += card.pointsEstimated;
+                    }
+                    stats.sprintEstimatedPoints += card.pointsEstimated;
+                    burnout[card.dayCreated].realPointsLeft += card.pointsEstimated;
+                    if (card.isCompleted) {
+                        burnout[card.dayCompleted].realHoursDone += card.hoursReal;
+                        burnout[card.dayCompleted].realPointsDone += card.pointsEstimated;
+                        stats.sprintRealPoints += card.pointsEstimated;
+                        statLabel.doneTasks += 1;
+                        statLabel.donePoints += card.pointsEstimated;
+                        statLabel.workedHours += card.hoursReal;
+                    }
+                    if (storiesSinceSprintTwo && card.type === "Story") {
+                        stats.artifacts.push(card);
+                    }
+                } else if (card.type !== undefined){
+                    stats.artifacts.push(card);
                 }
-                stats.labels[card.label.id] = statLabel;
-            } else {
-                statLabel = stats.labels[card.label.id];
-            }
-
-            statLabel.allTasks += 1;
-            statLabel.allPoints += card.pointsEstimated;
-            statLabel.plannedHours += card.hoursEstimated;
-
-            if (card.isPlanned) {
-                stats.sprintPlannedPoints += card.pointsEstimated;
-                statLabel.plannedTasks += 1;
-                statLabel.plannedPoints += card.pointsEstimated;
-            }
-            stats.sprintEstimatedPoints += card.pointsEstimated;
-            burnout[card.dayCreated].realPointsLeft += card.pointsEstimated;
-            if (card.isCompleted) {
-                burnout[card.dayCompleted].realHoursDone += card.hoursReal;
-                burnout[card.dayCompleted].realPointsDone += card.pointsEstimated;
-                stats.sprintRealPoints += card.pointsEstimated;
-                statLabel.doneTasks += 1;
-                statLabel.donePoints += card.pointsEstimated;
-                statLabel.workedHours += card.hoursReal;
-            }
-            if (storiesSinceSprintTwo && card.type === "Story") {
-                stats.artifacts.push(card);
-            }
-        } else if (card.type !== undefined){
-            stats.artifacts.push(card);
-        }
+            });
+            resolve(stats);
+        });
     });
-    console.log("Returning from calculateCardStats\n" + JSON.stringify(stats));
-    return stats;   
 }
 
 
@@ -265,8 +267,9 @@ function getPointsStatFor(day, burnout, plannedPoints) {
 }
 
 function getCustomFieldsFor(sprintId) {
-    var url = "https://api.trello.com/1/boards/" + sprintId + "/customFields" + 
-        "?key=" + apiConfig.apiKey + "&token=" + apiConfig.apiToken;
+    return new Promise((resolve, reject) => {
+        var url = "https://api.trello.com/1/boards/" + sprintId + "/customFields" + 
+            "?key=" + apiConfig.apiKey + "&token=" + apiConfig.apiToken;
         var result = {};
         $.getJSON(url, function (response) {
             $.each(response, function(index) {
@@ -285,8 +288,9 @@ function getCustomFieldsFor(sprintId) {
                         break;  
                 }
             });
+            resolve(result);
         });
-    return result;
+    });
 }
 
 function createCardFrom(cardData, sprintCustomFields, sprint) {
