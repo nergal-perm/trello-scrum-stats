@@ -19,7 +19,7 @@ $(document).ready(function() {
 
 /**
  * Loads configuration from `config` folder, then delegates to
- * `getAllTheSprints` function to asquire sprints metadata.
+ * `getAllTheSprints` function to acquire sprints metadata.
  */
 function loadSprintDataUsingSavedConfig() {
     $.getJSON( "config/config.json", function( data ) {
@@ -114,7 +114,6 @@ function createSprintReport() {
     cardsPromise.then(function(data) {
         var burnout = createBurnoutTemplate(sprint);
         calculateCardStats(data, sprint, burnout).then(function(stats) {
-            console.log("Calculated card stats", JSON.stringify(stats));
             calculateBurnoutStats(burnout, stats.sprintPlannedPoints);
             clearPage();
             $("<p/>", {
